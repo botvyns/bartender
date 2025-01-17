@@ -48,11 +48,11 @@ class CocktailBot:
 
     def update_user_preferences(self, message: str) -> None:
         preference_prompt = f"""
-        Extract user preferences from indicated message. Focus on:
-        - Preferred ingredients
-        - Taste preferences (sweet, sour, bitter, etc.)
+        Extract user preferences from indicated message. Preferences might include but not limited to: 
+        - Ingredients (lemon, pear, blueberry, etc.)
+        - Tastes (sweet, sour, bitter, etc.)
         - Allergies or restrictions
-        Return as a comma-separated list or 'none' if no preferences found.
+        Return as a comma-separated list of found preferences or 'none' if no preferences found.
         
         Message: {message}
         """
