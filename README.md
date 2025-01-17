@@ -22,3 +22,5 @@ For non-recommendation queries, the bot uses the ConversationChain with memory t
 
 Assistant actually provided cocktails with lemon (three of which are present in dataset - `Tom Collins`, `French 75`, and `Whiskey Sour`). It correcly provided 5 non-alcoholic drinks, although I couldn't find them in a dataset. It couldn't answer about my provided preferences and couldn't suggest alternative to "Hot Creamy Bush".
 Overall, chatbot needs an improvement for both vectorstores. The improvements could come from experimenting with different vectors, different types of storing text and retrieval types.
+
+**P.S.** I've spend some additional time for improvement after main development process. I've done some code refactoring and added ConversationalRetrievalChain. One of the improvements is that now the assistant remembers user preferences. Changes are done on the branch `20240117_improvements`. This version can be also deployed on [Streamlit Community Cloud](https://streamlit.io/cloud), you just need to change branches to deploy from.
