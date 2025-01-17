@@ -2,7 +2,7 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationChain
+from langchain.chains import ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
@@ -14,37 +14,45 @@ from src.config import EMBEDDING_MODEL, MODEL_NAME, TEMPERATURE, TOP_K
 class CocktailBot:
 
     @property
-    def system_prompt(self) -> None:
-        return PromptTemplate(
-            input_variables=["history", "input"],
-            template="""You are a friendly and knowledgeable bartender who helps users discover cocktails they might enjoy.
-            Use the conversation history and user preferences to provide personalized bit concise recommendations.
+    def template(self) -> str:
+        return """You are a friendly and knowledgeable bartender who helps users discover cocktails they might enjoy.
+            Use the conversation history and user preferences to provide personalized but concise recommendations.
             If you do not know the answer, you do not lie. You provide only factual information. 
-            You chat only on themes that are related to cocktails and not anything else.
-            
+            You chat only on themes that are related to drinks and not anything else.
+
             Previous conversation:
-            {history}
-            
-            Human: {input}
-            Assistant:""",
-        )
+            {chat_history}
+
+            Context from cocktail database:
+            {context}
+
+            Human: {question}
+            Assistant:"""
 
     def __init__(self, data_path: Path, openai_api_key: str):
         self.llm = ChatOpenAI(model_name=MODEL_NAME, temperature=TEMPERATURE, openai_api_key=openai_api_key)
+        self.qa_prompt = PromptTemplate(input_variables=["chat_history", "context", "question"], template=self.template)
         self.df = pd.read_csv(data_path)
         self.cocktails_vector_store = self.create_vector_store()
         self.user_preferences_store = FAISS.from_texts([""], OpenAIEmbeddings(model=EMBEDDING_MODEL))
-        self.conversation = ConversationChain(
-            llm=self.llm, memory=ConversationBufferMemory(), prompt=self.system_prompt
+
+        self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
+        self.conversation = ConversationalRetrievalChain.from_llm(
+            llm=self.llm,
+            retriever=self.cocktails_vector_store.as_retriever(search_kwargs={"k": TOP_K}),
+            memory=self.memory,
+            combine_docs_chain_kwargs={"prompt": self.template},
+            verbose=True,
         )
 
     def create_vector_store(self):
-        texts = []
-        for _, row in self.df.iterrows():
-            text = f"{row['name']} - {row['category']} - {row['alcoholic']} - {row['ingredients']}"
-            texts.append(text)
+        texts = self.df['ingredients'].tolist()
+        metadata = self.df.apply(
+            lambda row: {'name': row['name'], 'category': row['category'], 'alcoholic': row['alcoholic']}, axis=1
+        ).tolist()
 
-        return FAISS.from_texts(texts, OpenAIEmbeddings(model=EMBEDDING_MODEL))
+        return FAISS.from_texts(texts, OpenAIEmbeddings(model=EMBEDDING_MODEL), metadata=metadata)
 
     def update_user_preferences(self, message: str) -> None:
         preference_prompt = f"""
@@ -69,13 +77,13 @@ class CocktailBot:
 
         recommendations = []
         for doc in similar_cocktails:
-            cocktail_description = self.df[self.df['name'].str.contains(doc.page_content)]
+            cocktail_name = doc.metadata.get('name', '')
+            cocktail_description = self.df[self.df['name'] == cocktail_name]
             if not cocktail_description.empty:
                 recommendations.append(
                     {
                         'name': cocktail_description['name'].iloc[0],
                         'ingredients': cocktail_description['ingredients'].iloc[0],
-                        'instructions': cocktail_description['instructions'].iloc[0],
                     }
                 )
 
@@ -86,20 +94,13 @@ class CocktailBot:
 
         if any(word in message.lower() for word in ['recommend', 'suggest', 'suggestion', 'what should', 'what can']):
             recommendations = self.search_for_recommendation(message)
-
             formatted_recommendations = "\n".join([f"- {r['name']}: {r['ingredients']}" for r in recommendations])
 
-            response_prompt = f"""
-            Based on the user's message and these cocktail recommendations:
-            {formatted_recommendations}
+            response = self.conversation(
+                {"question": f"{message}\n\nAvailable cocktails:\n{formatted_recommendations}"}
+            )
 
-            Provide a concise response that:
-            1. Acknowledges their preferences
-            2. Presents the recommendations naturally
-            """
-
-            response = self.llm.predict(response_prompt)
+            return response['answer']
         else:
-            response = self.conversation.predict(input=message)
-
-        return response
+            response = self.conversation({"question": message})
+            return response['answer']
