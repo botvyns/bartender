@@ -4,13 +4,12 @@ import time
 import streamlit as st
 
 from src.bot import CocktailBot
-from src.config import COCKTAIL_DATA_PATH
 
 
 st.set_page_config(page_title="🍸 Cocktail Recommendation Chatbot")
 
 if 'bot' not in st.session_state:
-    st.session_state.bot = CocktailBot(data_path=COCKTAIL_DATA_PATH, openai_api_key=os.getenv('OPENAI_API_KEY'))
+    st.session_state.bot = CocktailBot(openai_api_key=os.getenv('OPENAI_API_KEY'))
 
 if 'messages' not in st.session_state:
     st.session_state['messages'] = [
